@@ -1,0 +1,201 @@
+#!/usr/bin/perl -w
+#
+# Copyright (c) 2017 Andreas Kwast
+# Written by: Andreas Kwast (interstar001@vodafonemail.de)
+#
+################################################
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use strict;
+use Getopt::Long;
+use FindBin qw/$Script/;
+
+my $PROGNAME = $Script;
+my $PROGVER = "0.01";
+
+my ( $Path, $User, $Group, $Rights, $Warning, $Critical, $Timeout, $verbose, $output, $files, $dirs );
+my ( $i, $lright, $luser, $lgroup, $lsice, $lmonth, $lday, $lyear, $lname);
+my @ls_out;
+my ( $x, $kright );
+my $errorcount = 0;
+my $cline = "l";
+my ($clinea, $cliner); 
+
+################################################
+# get argument variables 
+
+GetOptions (
+			"P=s" => \$Path, "path=s" => \$Path,
+
+			"U=s" => \$User, "user=s" => \$User,
+			"G=s" => \$Group, "group=s" => \$Group,
+			"R=i" => \$Rights, "rights=s" => \$Rights,
+			
+			"w=i" => \$Warning, "warning=i" => \$Warning,
+			"c=i" => \$Critical, "critical=i" => \$Critical,
+			
+			"t=i" => \$Timeout,  "timeout=i" => \$Timeout,
+
+			"f" => \$files,	"files" => \$files,
+			"d" => \$dirs,	"dirs" => \$dirs,
+			
+			"a" => \$clinea, "all" => \$clinea,
+			"s" => \$cliner,"recursiv" => \$cliner,
+			
+			"v" => \$verbose, "verbose"	=> \$verbose,
+			"h" => sub { usage() }, "help" => sub { usage() },
+);
+
+if (!$Path) { usage() };
+
+if ($clinea) { $cline = $cline . "a" };
+if ($cliner) { $cline = $cline . "R" };
+if ($verbose) { print "Debugmode is on\n" };
+
+##############################################
+# prints the usage of the plugin
+sub usage {
+  my $msg = shift;
+
+  if (defined $msg) {
+    print "$msg\n";
+  }
+   
+  print << "EOT";
+
+$PROGNAME version $PROGVER
+usage:
+  
+  -P <file> or <dir>,  --path=     /path/to/dir or file
+  
+  -R <Right>,          --rights=   File system rights example 666
+  -U <Username>,       --user=     Username example user
+  -G <Group>,          --group=    Groupname example users
+
+  -f,                  --files     check files only
+  -d,                  --dirs      check directories only
+  
+  -a,                  --all       include current directory
+  -r,                  --recursiv  check filesystem recursive
+  -v,                  --verbose   debug output
+  -h,                  --help      this help message
+
+  example:
+
+$PROGNAME -P /path/to/file -R 766 -U root -G root
+
+EOT
+  exit(3);
+}
+
+@ls_out = `/bin/ls -$cline $Path 2>&1`;
+
+chomp($ls_out[0]);
+
+if ( $? gt 0 ) {
+	print "CRITICAL @ls_out\n";
+	exit(2);
+}
+
+
+
+if (scalar(@ls_out) eq 1){
+	chomp($ls_out[0]);
+	if ($ls_out[0] eq 'total 0'){
+		print "No elements to check found\n";
+		exit(0);
+	}
+}
+
+if ($verbose) { print scalar(@ls_out) . " elements found\n" };
+	
+if ($verbose && scalar(@ls_out) eq 1) { print "@ls_out\n" };
+if ($verbose && scalar(@ls_out) gt 1) { print "@ls_out" };
+
+for ($i=0;$i<@ls_out;$i++){
+	#if ($verbose) { print "$ls_out[$i]" };
+	($lright, undef, $luser, $lgroup, $lsice, $lmonth, $lday, $lyear, $lname) = split(/ +/, $ls_out[$i]);
+	if ($lname) {chomp($lname)};
+	if ($lright ne "total" && $lname && $lname ne "..") {
+		if ($lname eq ".") { $lname = $Path };
+		if ($Rights) {
+			push (my @srights, split(//, $lright));
+			if ($srights[0] ne "l") {
+				my $xright = 0;
+				
+				if ( $srights[3] eq "S" || $srights[3] eq "s" ) { $xright = $xright + 4 };
+				if ( $srights[6] eq "S" || $srights[6] eq "s" ) { $xright = $xright + 2 };
+				if ( $srights[9] eq "T" || $srights[9] eq "t" ) { $xright = $xright + 1 };
+				for ($x=1;$x<@srights;$x++){
+					if ( $srights[$x] eq "r" ) { $srights[$x] =4};
+					if ( $srights[$x] eq "w" ) { $srights[$x] =2};
+					if ( $srights[$x] eq "x" || $srights[$x] eq "s" || $srights[$x] eq "t") { $srights[$x] =1};
+					if ( $srights[$x] eq "-" || $srights[$x] eq "S" || $srights[$x] eq "T" ) { $srights[$x] =0};
+				}
+				$kright = $xright . "" . $srights[1] + $srights[2] + $srights[3] . "" . $srights[4] + $srights[5] + $srights[6] . "" . $srights[7] + $srights[8] + $srights[9];
+				if ($verbose) { print "$kright - $lname\n" };
+				if ($kright ne $Rights && ((!$files && !$dirs) || ($dirs && $srights[0] eq "d") || ($files && $srights[0] eq "-"))) {
+					if ( $errorcount eq 0 ){
+						$output = "$lname permission is $kright not $Rights";
+					}
+					else {
+						$output = $output . "\n$lname permission is $kright not $Rights";
+					}
+					$errorcount++;
+				}
+				undef $xright;			
+			}
+			undef @srights;
+		}
+		if ( $User ) {
+			if ($User ne $luser && ((!$files && !$dirs) || ($dirs && substr($lright,0,1) eq "d") || ($files && substr($lright,0,1) eq "-"))) {
+				if ( $errorcount eq 0 ){
+					$output = "$lname user is $luser not $User";
+				}
+				else {
+					$output = $output . "\n$lname user is $luser not $User";
+				}
+				$errorcount++;								
+			}
+		}
+		if ( $Group) {
+			if ($Group ne $lgroup && ((!$files && !$dirs) || ($dirs && substr($lright,0,1) eq "d") || ($files && substr($lright,0,1) eq "-"))) {
+				if ( $errorcount eq 0 ){
+					$output = "$lname user is $lgroup not $Group";
+				}
+				else {
+					$output = $output . "\n$lname user is $lgroup not $Group";
+				}
+				$errorcount++;								
+			}
+		}			
+	}
+}
+
+if ($errorcount eq 1){
+	printf "CRITICAL: $output\n";
+	exit(2);
+}
+elsif ($errorcount gt 1){
+	printf "CRITICAL: $errorcount permission problems found\n$output\n";
+	exit(2);
+}
+else {
+	printf "OK: no permission problems found\n";
+	exit(0);
+}
+
+printf "UNKNOWN";
+exit(3);
