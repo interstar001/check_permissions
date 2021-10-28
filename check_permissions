@@ -173,10 +173,10 @@ for ($i=0;$i<@ls_out;$i++){
 		if ( $Group) {
 			if ($Group ne $lgroup && ((!$files && !$dirs) || ($dirs && substr($lright,0,1) eq "d") || ($files && substr($lright,0,1) eq "-"))) {
 				if ( $errorcount eq 0 ){
-					$output = "$lname user is $lgroup not $Group";
+					$output = "$lname group is $lgroup not $Group";
 				}
 				else {
-					$output = $output . "\n$lname user is $lgroup not $Group";
+					$output = $output . "\n$lname group is $lgroup not $Group";
 				}
 				$errorcount++;								
 			}
